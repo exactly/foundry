@@ -193,6 +193,8 @@ pub struct TestSetup {
     pub logs: Vec<Log>,
     /// Call traces of the setup
     pub traces: Traces,
+    /// Raw coverage info
+    pub coverage: Option<HitMaps>,
     /// Addresses labeled during setup
     pub labeled_addresses: BTreeMap<Address, String>,
     /// The reason the setup failed, if it did
@@ -205,6 +207,7 @@ impl TestSetup {
         mut logs: Vec<Log>,
         mut traces: Traces,
         mut labeled_addresses: BTreeMap<Address, String>,
+        coverage: Option<HitMaps>,
     ) -> Self {
         match error {
             EvmError::Execution(err) => {
@@ -212,13 +215,14 @@ impl TestSetup {
                 traces.extend(err.traces.map(|traces| (TraceKind::Setup, traces)));
                 logs.extend(err.logs);
                 labeled_addresses.extend(err.labels);
-                Self::failed_with(logs, traces, labeled_addresses, err.reason)
+                Self::failed_with(logs, traces, labeled_addresses, err.reason, coverage)
             }
             e => Self::failed_with(
                 logs,
                 traces,
                 labeled_addresses,
                 format!("Failed to deploy contract: {e}"),
+                coverage,
             ),
         }
     }
@@ -228,8 +232,9 @@ impl TestSetup {
         logs: Vec<Log>,
         traces: Traces,
         labeled_addresses: BTreeMap<Address, String>,
+        coverage: Option<HitMaps>,
     ) -> Self {
-        Self { address, logs, traces, labeled_addresses, reason: None }
+        Self { address, logs, traces, coverage, labeled_addresses, reason: None }
     }
 
     pub fn failed_with(
@@ -237,8 +242,16 @@ impl TestSetup {
         traces: Traces,
         labeled_addresses: BTreeMap<Address, String>,
         reason: String,
+        coverage: Option<HitMaps>,
     ) -> Self {
-        Self { address: Address::zero(), logs, traces, labeled_addresses, reason: Some(reason) }
+        Self {
+            address: Address::zero(),
+            logs,
+            traces,
+            coverage,
+            labeled_addresses,
+            reason: Some(reason),
+        }
     }
 
     pub fn failed(reason: String) -> Self {
