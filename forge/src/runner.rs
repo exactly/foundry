@@ -109,6 +109,7 @@ impl<'a> ContractRunner<'a> {
                         address: Address::zero(),
                         logs,
                         traces,
+                        coverage: None,
                         labeled_addresses: labels,
                         setup_failed: true,
                         reason: Some(reason),
@@ -133,6 +134,7 @@ impl<'a> ContractRunner<'a> {
                     address: Address::zero(),
                     logs,
                     traces,
+                    coverage: None,
                     labeled_addresses: labels,
                     setup_failed: true,
                     reason: Some(reason),
@@ -154,22 +156,23 @@ impl<'a> ContractRunner<'a> {
         // Optionally call the `setUp` function
         let setup = if setup {
             trace!("setting up");
-            let (setup_failed, setup_logs, setup_traces, labeled_addresses, reason) =
+            let (setup_failed, setup_logs, setup_traces, coverage, labeled_addresses, reason) =
                 match self.executor.setup(None, address) {
-                    Ok(CallResult { traces, labels, logs, .. }) => {
+                    Ok(CallResult { traces, coverage, labels, logs, .. }) => {
                         trace!(contract=?address, "successfully setUp test");
-                        (false, logs, traces, labels, None)
+                        (false, logs, traces, coverage, labels, None)
                     }
                     Err(EvmError::Execution(err)) => {
                         let ExecutionErr { traces, labels, logs, reason, .. } = *err;
                         error!(reason=?reason, contract= ?address, "setUp failed");
-                        (true, logs, traces, labels, Some(format!("Setup failed: {reason}")))
+                        (true, logs, traces, None, labels, Some(format!("Setup failed: {reason}")))
                     }
                     Err(err) => {
                         error!(reason=?err, contract= ?address, "setUp failed");
                         (
                             true,
                             Vec::new(),
+                            None,
                             None,
                             BTreeMap::new(),
                             Some(format!("Setup failed: {}", &err.to_string())),
@@ -179,7 +182,7 @@ impl<'a> ContractRunner<'a> {
             traces.extend(setup_traces.map(|traces| (TraceKind::Setup, traces)).into_iter());
             logs.extend(setup_logs);
 
-            TestSetup { address, logs, traces, labeled_addresses, setup_failed, reason }
+            TestSetup { address, logs, traces, coverage, labeled_addresses, setup_failed, reason }
         } else {
             TestSetup { address, logs, traces, ..Default::default() }
         };
@@ -360,7 +363,14 @@ impl<'a> ContractRunner<'a> {
         should_fail: bool,
         setup: TestSetup,
     ) -> Result<TestResult> {
-        let TestSetup { address, mut logs, mut traces, mut labeled_addresses, .. } = setup;
+        let TestSetup {
+            address,
+            mut logs,
+            mut traces,
+            coverage: setup_coverage,
+            mut labeled_addresses,
+            ..
+        } = setup;
 
         // Run unit test
         let start = Instant::now();
@@ -370,7 +380,7 @@ impl<'a> ContractRunner<'a> {
             gas,
             stipend,
             execution_traces,
-            coverage,
+            execution_coverage,
             state_changeset,
             breakpoints,
         ) = match self.executor.execute_test::<(), _, _>(
@@ -387,7 +397,7 @@ impl<'a> ContractRunner<'a> {
                 stipend,
                 logs: execution_logs,
                 traces: execution_trace,
-                coverage,
+                coverage: execution_coverage,
                 labels: new_labels,
                 state_changeset,
                 breakpoints,
@@ -401,7 +411,7 @@ impl<'a> ContractRunner<'a> {
                     gas,
                     stipend,
                     execution_trace,
-                    coverage,
+                    execution_coverage,
                     state_changeset,
                     breakpoints,
                 )
@@ -460,7 +470,10 @@ impl<'a> ContractRunner<'a> {
             logs,
             kind: TestKind::Standard(gas.overflowing_sub(stipend).0),
             traces,
-            coverage,
+            coverage: match (setup_coverage, execution_coverage) {
+                (Some(setup), Some(execution)) => Some(setup.merge(execution)),
+                (setup, execution) => setup.or(execution),
+            },
             labeled_addresses,
             breakpoints,
         })
@@ -479,7 +492,9 @@ impl<'a> ContractRunner<'a> {
         trace!(target: "forge::test::fuzz", "executing invariant test with invariant functions {:?}",  functions.iter().map(|f|&f.name).collect::<Vec<_>>());
         let empty = ContractsByArtifact::default();
         let project_contracts = known_contracts.unwrap_or(&empty);
-        let TestSetup { address, logs, traces, labeled_addresses, .. } = setup;
+        let TestSetup {
+            address, logs, traces, coverage: setup_coverage, labeled_addresses, ..
+        } = setup;
 
         let mut evm = InvariantExecutor::new(
             &mut self.executor,
@@ -497,9 +512,13 @@ impl<'a> ContractRunner<'a> {
             cases,
             reverts,
             mut last_call_results,
-            coverage,
+            coverage: execution_coverage,
         }) = evm.invariant_fuzz(invariant_contract)?
         {
+            let coverage = match (setup_coverage, execution_coverage) {
+                (Some(setup), Some(execution)) => Some(setup.merge(execution)),
+                (setup, execution) => setup.or(execution),
+            };
             let results = invariants
                 .into_iter()
                 .map(|(func_name, test_error)| {
@@ -583,7 +602,14 @@ impl<'a> ContractRunner<'a> {
         setup: TestSetup,
         fuzz_config: FuzzConfig,
     ) -> Result<TestResult> {
-        let TestSetup { address, mut logs, mut traces, mut labeled_addresses, .. } = setup;
+        let TestSetup {
+            address,
+            mut logs,
+            mut traces,
+            coverage: setup_coverage,
+            mut labeled_addresses,
+            ..
+        } = setup;
 
         // Run fuzz test
         let start = Instant::now();
@@ -617,7 +643,10 @@ impl<'a> ContractRunner<'a> {
             logs,
             kind,
             traces,
-            coverage: result.coverage,
+            coverage: match (setup_coverage, result.coverage) {
+                (Some(setup), Some(execution)) => Some(setup.merge(execution)),
+                (setup, execution) => setup.or(execution),
+            },
             labeled_addresses,
             breakpoints: Default::default(),
         })
