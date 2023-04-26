@@ -27,6 +27,7 @@ use foundry_evm::{
 use proptest::test_runner::{TestError, TestRunner};
 use rayon::prelude::*;
 use std::{
+    cell::RefCell,
     collections::{BTreeMap, HashMap},
     time::Instant,
 };
@@ -461,10 +462,10 @@ impl<'a> ContractRunner<'a> {
 
         let Ok(InvariantFuzzTestResult { invariants, cases, reverts, mut last_call_results, coverage: execution_coverage }) =
             evm.invariant_fuzz(invariant_contract) else { return vec![] };
-        let coverage = match (setup_coverage, execution_coverage) {
+        let coverage = RefCell::new(match (setup_coverage, execution_coverage) {
             (Some(setup), Some(execution)) => Some(setup.merge(execution)),
             (setup, execution) => setup.or(execution),
-        };
+        });
         invariants
             .into_iter()
             .map(|(func_name, test_error)| {
@@ -510,6 +511,14 @@ impl<'a> ContractRunner<'a> {
                             if let Some(last_call_traces) = last_call_result.traces {
                                 traces.push((TraceKind::Execution, last_call_traces));
                             }
+
+                            if let Some(last_call_coverage) = last_call_result.coverage {
+                                coverage.replace(Some(if let Some(coverage) = coverage.take() {
+                                    coverage.merge(last_call_coverage)
+                                } else {
+                                    last_call_coverage
+                                }));
+                            }
                         }
                     }
                 }
@@ -527,7 +536,7 @@ impl<'a> ContractRunner<'a> {
                     decoded_logs: decode_console_logs(&logs),
                     logs,
                     kind,
-                    coverage: coverage.clone(),
+                    coverage: coverage.take(),
                     traces,
                     labeled_addresses: labeled_addresses.clone(),
                     breakpoints: Default::default(),
