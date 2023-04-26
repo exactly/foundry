@@ -71,8 +71,8 @@ impl Cmd for CoverageArgs {
         let project = config.project()?;
 
         // install missing dependencies
-        if install::install_missing_dependencies(&mut config, &project, self.build_args().silent) &&
-            config.auto_detect_remappings
+        if install::install_missing_dependencies(&mut config, &project, self.build_args().silent)
+            && config.auto_detect_remappings
         {
             // need to re-configure here to also catch additional remappings
             config = self.load_config();
@@ -136,7 +136,7 @@ impl CoverageArgs {
         for (path, mut source_file, version) in sources.into_sources_with_version() {
             // Filter out dependencies
             if project_paths.has_library_ancestor(std::path::Path::new(&path)) {
-                continue
+                continue;
             }
 
             if let Some(ast) = source_file.ast.take() {
@@ -266,6 +266,9 @@ impl CoverageArgs {
     ) -> eyre::Result<()> {
         let root = project.paths.root;
 
+        let test_options =
+            TestOptions { fuzz: config.fuzz, invariant: config.invariant, ..Default::default() };
+
         // Build the contract runner
         let evm_spec = evm_spec(&config.evm_version);
         let env = evm_opts.evm_env_blocking()?;
@@ -275,14 +278,14 @@ impl CoverageArgs {
             .sender(evm_opts.sender)
             .with_fork(evm_opts.get_fork(&config, env.clone()))
             .with_cheats_config(CheatsConfig::new(&config, &evm_opts))
-            .with_test_options(TestOptions { fuzz: config.fuzz, ..Default::default() })
+            .with_test_options(test_options.clone())
             .set_coverage(true)
             .build(root.clone(), output, env, evm_opts)?;
 
         // Run tests
         let known_contracts = runner.known_contracts.clone();
         let (tx, rx) = channel::<(String, SuiteResult)>();
-        let handle = thread::spawn(move || runner.test(&self.filter, Some(tx), Default::default()));
+        let handle = thread::spawn(move || runner.test(&self.filter, Some(tx), test_options));
 
         // Add hit data to the coverage report
         for (artifact_id, hits) in rx
