@@ -5,6 +5,7 @@ use super::{
     InvariantFuzzTestResult, RandomCallGenerator, TargetedContracts,
 };
 use crate::{
+    coverage::HitMaps,
     executor::{
         inspector::Fuzzer, Executor, RawCallResult, CHEATCODE_ADDRESS, HARDHAT_CONSOLE_ADDRESS,
     },
@@ -92,6 +93,9 @@ impl<'a> InvariantExecutor<'a> {
         let failures =
             RefCell::new(InvariantFailures::new(&invariant_contract.invariant_functions));
 
+        // Stores coverage information for all runs
+        let coverage: RefCell<Option<HitMaps>> = RefCell::default();
+
         let blank_executor = RefCell::new(&mut *self.executor);
 
         let last_call_results = RefCell::new(
@@ -119,13 +123,13 @@ impl<'a> InvariantExecutor<'a> {
                 // Scenarios where we want to fail as soon as possible.
                 {
                     if self.config.fail_on_revert && failures.borrow().reverts == 1 {
-                        return Err(TestCaseError::fail("Revert occurred."))
+                        return Err(TestCaseError::fail("Revert occurred."));
                     }
 
-                    if failures.borrow().broken_invariants_count ==
-                        invariant_contract.invariant_functions.len()
+                    if failures.borrow().broken_invariants_count
+                        == invariant_contract.invariant_functions.len()
                     {
-                        return Err(TestCaseError::fail("All invariants have been broken."))
+                        return Err(TestCaseError::fail("All invariants have been broken."));
                     }
                 }
 
@@ -181,7 +185,7 @@ impl<'a> InvariantExecutor<'a> {
 
                     let (can_continue, call_results) = can_continue(
                         &invariant_contract,
-                        call_result,
+                        &call_result,
                         &executor,
                         &inputs,
                         &mut failures.borrow_mut(),
@@ -190,7 +194,13 @@ impl<'a> InvariantExecutor<'a> {
                     );
 
                     if !can_continue {
-                        break 'fuzz_run
+                        break 'fuzz_run;
+                    }
+
+                    if let Some(prev) = coverage.take() {
+                        coverage.replace(Some(prev.merge(call_result.coverage.unwrap())));
+                    } else {
+                        coverage.replace(call_result.coverage);
                     }
 
                     *last_call_results.borrow_mut() = call_results;
@@ -228,6 +238,7 @@ impl<'a> InvariantExecutor<'a> {
             cases: fuzz_cases.into_inner(),
             reverts,
             last_call_results: last_call_results.take(),
+            coverage: coverage.into_inner(),
         })
     }
 
@@ -347,9 +358,9 @@ impl<'a> InvariantExecutor<'a> {
                         ethers::abi::StateMutability::Pure | ethers::abi::StateMutability::View
                     )
                 })
-                .count() ==
-                0 &&
-                !self.artifact_filters.excluded.contains(&artifact.identifier())
+                .count()
+                == 0
+                && !self.artifact_filters.excluded.contains(&artifact.identifier())
             {
                 self.artifact_filters.excluded.push(artifact.identifier());
             }
@@ -360,8 +371,8 @@ impl<'a> InvariantExecutor<'a> {
         for contract in selected_abi {
             let identifier = self.validate_selected_contract(contract, &[])?;
 
-            if !self.artifact_filters.targeted.contains_key(&identifier) &&
-                !self.artifact_filters.excluded.contains(&identifier)
+            if !self.artifact_filters.targeted.contains_key(&identifier)
+                && !self.artifact_filters.excluded.contains(&identifier)
             {
                 self.artifact_filters.targeted.insert(identifier, vec![]);
             }
@@ -387,7 +398,7 @@ impl<'a> InvariantExecutor<'a> {
                     .wrap_err(format!("{contract} does not have the selector {selector:?}"))?;
             }
 
-            return Ok(artifact.identifier())
+            return Ok(artifact.identifier());
         }
         eyre::bail!("{contract} not found in the project. Allowed format: `contract_name` or `contract_path:contract_name`.");
     }
@@ -408,15 +419,15 @@ impl<'a> InvariantExecutor<'a> {
             .clone()
             .into_iter()
             .filter(|(addr, (identifier, _))| {
-                *addr != invariant_address &&
-                    *addr != CHEATCODE_ADDRESS &&
-                    *addr != HARDHAT_CONSOLE_ADDRESS &&
-                    (selected.is_empty() || selected.contains(addr)) &&
-                    (self.artifact_filters.targeted.is_empty() ||
-                        self.artifact_filters.targeted.contains_key(identifier)) &&
-                    (excluded.is_empty() || !excluded.contains(addr)) &&
-                    (self.artifact_filters.excluded.is_empty() ||
-                        !self.artifact_filters.excluded.contains(identifier))
+                *addr != invariant_address
+                    && *addr != CHEATCODE_ADDRESS
+                    && *addr != HARDHAT_CONSOLE_ADDRESS
+                    && (selected.is_empty() || selected.contains(addr))
+                    && (self.artifact_filters.targeted.is_empty()
+                        || self.artifact_filters.targeted.contains_key(identifier))
+                    && (excluded.is_empty() || !excluded.contains(addr))
+                    && (self.artifact_filters.excluded.is_empty()
+                        || !self.artifact_filters.excluded.contains(identifier))
             })
             .map(|(addr, (identifier, abi))| (addr, (identifier, abi, vec![])))
             .collect();
@@ -504,7 +515,7 @@ impl<'a> InvariantExecutor<'a> {
                 U256::zero(),
                 Some(abi),
             ) {
-                return call_result.result
+                return call_result.result;
             } else {
                 warn!(
                     "The function {} was found but there was an error querying its data.",
@@ -553,7 +564,7 @@ fn collect_data(
 /// Returns the mapping of (Invariant Function Name -> Call Result) if invariants were asserted.
 fn can_continue(
     invariant_contract: &InvariantContract,
-    call_result: RawCallResult,
+    call_result: &RawCallResult,
     executor: &Executor,
     calldata: &[BasicTxDetails],
     failures: &mut InvariantFailures,
@@ -564,7 +575,7 @@ fn can_continue(
     if !call_result.reverted {
         call_results = assert_invariants(invariant_contract, executor, calldata, failures).ok();
         if call_results.is_none() {
-            return (false, None)
+            return (false, None);
         }
     } else {
         failures.reverts += 1;
@@ -588,7 +599,7 @@ fn can_continue(
                 failures.failed_invariants.insert(invariant.name.clone(), Some(error.clone()));
             }
 
-            return (false, None)
+            return (false, None);
         }
     }
     (true, call_results)

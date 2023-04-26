@@ -39,7 +39,7 @@ impl InvariantFuzzError {
         invariant_contract: &InvariantContract,
         error_func: Option<&Function>,
         calldata: &[BasicTxDetails],
-        call_result: RawCallResult,
+        call_result: &RawCallResult,
         inner_sequence: &[Option<BasicTxDetails>],
         shrink_sequence: bool,
     ) -> Self {
@@ -54,8 +54,8 @@ impl InvariantFuzzError {
         }
 
         InvariantFuzzError {
-            logs: call_result.logs,
-            traces: call_result.traces,
+            logs: call_result.logs.clone(),
+            traces: call_result.traces.clone(),
             test_error: proptest::test_runner::TestError::Fail(
                 format!(
                     "{}, reason: '{}'",

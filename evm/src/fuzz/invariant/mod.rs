@@ -93,7 +93,7 @@ pub fn assert_invariants(
                         invariant_contract,
                         Some(broken_invariant),
                         calldata,
-                        call_result,
+                        &call_result,
                         &inner_sequence,
                         true,
                     )),
@@ -135,4 +135,7 @@ pub struct InvariantFuzzTestResult {
     pub reverts: usize,
 
     pub last_call_results: Option<BTreeMap<String, RawCallResult>>,
+
+    /// Raw coverage info
+    pub coverage: Option<HitMaps>,
 }

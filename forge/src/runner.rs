@@ -204,7 +204,7 @@ impl<'a> ContractRunner<'a> {
                 )]
                 .into(),
                 warnings,
-            )
+            );
         }
 
         let has_invariants = self.contract.functions().any(|func| func.is_invariant_test());
@@ -239,7 +239,7 @@ impl<'a> ContractRunner<'a> {
                 )]
                 .into(),
                 warnings,
-            )
+            );
         }
 
         let mut test_results = self
@@ -414,7 +414,7 @@ impl<'a> ContractRunner<'a> {
         let invariant_contract =
             InvariantContract { address, invariant_functions: functions, abi: self.contract };
 
-        let Ok(InvariantFuzzTestResult { invariants, cases, reverts, mut last_call_results }) =
+        let Ok(InvariantFuzzTestResult { invariants, cases, reverts, mut last_call_results, coverage }) =
             evm.invariant_fuzz(invariant_contract) else { return vec![] };
 
         invariants
@@ -479,7 +479,7 @@ impl<'a> ContractRunner<'a> {
                     decoded_logs: decode_console_logs(&logs),
                     logs,
                     kind,
-                    coverage: None, // TODO ?
+                    coverage: coverage.clone(),
                     traces,
                     labeled_addresses: labeled_addresses.clone(),
                     breakpoints: Default::default(),
