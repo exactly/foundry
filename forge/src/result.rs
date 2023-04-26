@@ -182,6 +182,8 @@ pub struct TestSetup {
     pub logs: Vec<Log>,
     /// Call traces of the setup
     pub traces: Traces,
+    /// Raw coverage info
+    pub coverage: Option<HitMaps>,
     /// Addresses labeled during setup
     pub labeled_addresses: BTreeMap<Address, String>,
     /// Whether the setup failed
