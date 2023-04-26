@@ -265,6 +265,8 @@ impl CoverageArgs {
     ) -> eyre::Result<()> {
         let root = project.paths.root;
 
+        let test_options = TestOptions { fuzz: config.fuzz, invariant: config.invariant };
+
         // Build the contract runner
         let evm_spec = utils::evm_spec(&config.evm_version);
         let env = evm_opts.evm_env_blocking()?;
@@ -274,7 +276,7 @@ impl CoverageArgs {
             .sender(evm_opts.sender)
             .with_fork(evm_opts.get_fork(&config, env.clone()))
             .with_cheats_config(CheatsConfig::new(&config, &evm_opts))
-            .with_test_options(TestOptions { fuzz: config.fuzz, ..Default::default() })
+            .with_test_options(test_options)
             .set_coverage(true)
             .build(root.clone(), output, env, evm_opts)?;
 
@@ -282,7 +284,7 @@ impl CoverageArgs {
         let known_contracts = runner.known_contracts.clone();
         let (tx, rx) = channel::<(String, SuiteResult)>();
         let handle =
-            thread::spawn(move || runner.test(&self.filter, Some(tx), Default::default()).unwrap());
+            thread::spawn(move || runner.test(&self.filter, Some(tx), test_options).unwrap());
 
         // Add hit data to the coverage report
         for (artifact_id, hits) in rx
