@@ -5,6 +5,7 @@ use super::{
     InvariantFuzzTestResult, RandomCallGenerator, TargetedContracts,
 };
 use crate::{
+    coverage::HitMaps,
     executor::{
         inspector::Fuzzer, Executor, RawCallResult, CHEATCODE_ADDRESS, HARDHAT_CONSOLE_ADDRESS,
     },
@@ -92,6 +93,9 @@ impl<'a> InvariantExecutor<'a> {
         // Stores data related to reverts or failed assertions of the test.
         let failures =
             RefCell::new(InvariantFailures::new(&invariant_contract.invariant_functions));
+
+        // Stores coverage information for all runs
+        let coverage: RefCell<Option<HitMaps>> = RefCell::default();
 
         let blank_executor = RefCell::new(&mut *self.executor);
 
@@ -182,7 +186,7 @@ impl<'a> InvariantExecutor<'a> {
 
                     let (can_continue, call_results) = can_continue(
                         &invariant_contract,
-                        call_result,
+                        &call_result,
                         &executor,
                         &inputs,
                         &mut failures.borrow_mut(),
@@ -191,6 +195,12 @@ impl<'a> InvariantExecutor<'a> {
 
                     if !can_continue {
                         break 'fuzz_run
+                    }
+
+                    if let Some(prev) = coverage.take() {
+                        coverage.replace(Some(prev.merge(call_result.coverage.unwrap())));
+                    } else {
+                        coverage.replace(call_result.coverage);
                     }
 
                     *last_call_results.borrow_mut() = call_results;
@@ -228,6 +238,7 @@ impl<'a> InvariantExecutor<'a> {
             cases: fuzz_cases.into_inner(),
             reverts,
             last_call_results: last_call_results.take(),
+            coverage: coverage.into_inner(),
         }))
     }
 
@@ -553,7 +564,7 @@ fn collect_data(
 /// Returns the mapping of (Invariant Function Name -> Call Result) if invariants were asserted.
 fn can_continue(
     invariant_contract: &InvariantContract,
-    call_result: RawCallResult,
+    call_result: &RawCallResult,
     executor: &Executor,
     calldata: &[BasicTxDetails],
     failures: &mut InvariantFailures,

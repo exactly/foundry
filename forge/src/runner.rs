@@ -492,8 +492,13 @@ impl<'a> ContractRunner<'a> {
         let invariant_contract =
             InvariantContract { address, invariant_functions: functions, abi: self.contract };
 
-        if let Some(InvariantFuzzTestResult { invariants, cases, reverts, mut last_call_results }) =
-            evm.invariant_fuzz(invariant_contract)?
+        if let Some(InvariantFuzzTestResult {
+            invariants,
+            cases,
+            reverts,
+            mut last_call_results,
+            coverage,
+        }) = evm.invariant_fuzz(invariant_contract)?
         {
             let results = invariants
                 .into_iter()
@@ -554,7 +559,7 @@ impl<'a> ContractRunner<'a> {
                         decoded_logs: decode_console_logs(&logs),
                         logs,
                         kind,
-                        coverage: None, // todo?
+                        coverage: coverage.clone(),
                         traces,
                         labeled_addresses: labeled_addresses.clone(),
                         breakpoints: Default::default(),
