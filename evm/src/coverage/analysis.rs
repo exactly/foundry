@@ -175,14 +175,13 @@ impl<'a> ContractVisitor<'a> {
                 ),
             // If statement
             NodeType::IfStatement => {
-                self.visit_expression(
-                    node.attribute("condition")
-                        .ok_or_else(|| eyre::eyre!("while statement had no condition"))?,
-                )?;
+                let condition: Node = node
+                    .attribute("condition")
+                    .ok_or_else(|| eyre::eyre!("if statement has no condition"))?;
 
                 let true_body: Node = node
                     .attribute("trueBody")
-                    .ok_or_else(|| eyre::eyre!("if statement had no true body"))?;
+                    .ok_or_else(|| eyre::eyre!("if statement has no true body"))?;
 
                 // We need to store the current branch ID here since visiting the body of either of
                 // the if blocks may increase `self.branch_id` in the case of nested if statements.
@@ -199,15 +198,17 @@ impl<'a> ContractVisitor<'a> {
                 // include more complex logic like conditional logic.
                 self.push_branches(
                     &ethers::solc::artifacts::ast::LowFidelitySourceLocation {
-                        start: node.src.start,
+                        start: condition.src.start,
                         length: true_body
                             .src
                             .length
-                            .map(|length| true_body.src.start - node.src.start + length),
+                            .map(|length| true_body.src.start - condition.src.start + length),
                         index: node.src.index,
                     },
                     branch_id,
                 );
+
+                self.visit_expression(condition)?;
 
                 // Process the true branch
                 self.visit_block_or_statement(true_body)?;
