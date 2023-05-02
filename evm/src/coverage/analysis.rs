@@ -313,6 +313,40 @@ impl<'a> ContractVisitor<'a> {
                     loc: self.source_location_for(&node.src),
                     hits: 0,
                 });
+
+                let condition: Node = node
+                    .attribute("condition")
+                    .ok_or_else(|| eyre::eyre!("conditional statement has no condition"))?;
+
+                let branch_id = self.branch_id;
+
+                self.branch_id += 1;
+
+                self.push_branches(
+                    &ethers::solc::artifacts::ast::LowFidelitySourceLocation {
+                        start: condition.src.start,
+                        length: condition.src.length,
+                        index: node.src.index,
+                    },
+                    branch_id,
+                );
+
+                self.visit_expression(condition)?;
+
+                // Process the true branch
+                self.visit_expression(
+                    node.attribute("trueExpression").ok_or_else(|| {
+                        eyre::eyre!("conditional statement has no true expression")
+                    })?,
+                )?;
+
+                // Process the false branch
+                self.visit_expression(
+                    node.attribute("falseExpression").ok_or_else(|| {
+                        eyre::eyre!("conditional statement has no true expression")
+                    })?,
+                )?;
+
                 Ok(())
             }
             // Does not count towards coverage
