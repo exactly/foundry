@@ -214,10 +214,7 @@ impl<'a> ContractVisitor<'a> {
                 self.push_branches(
                     &ethers::solc::artifacts::ast::LowFidelitySourceLocation {
                         start: condition.src.start,
-                        length: true_body
-                            .src
-                            .length
-                            .map(|length| true_body.src.start - condition.src.start + length),
+                        length: condition.src.length,
                         index: node.src.index,
                     },
                     branch_id,
