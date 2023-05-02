@@ -112,20 +112,21 @@ pub fn find_anchor_branch(
     let mut anchors: Option<(ItemAnchor, ItemAnchor)> = None;
     let mut pc = 0;
     let mut cumulative_push_size = 0;
+    let mut after_range = false;
     while pc < bytecode.0.len() {
         let op = bytecode.0[pc];
 
+        let is_in_range = if let Some(element) = source_map.get(pc - cumulative_push_size) {
+            is_in_source_range(element, loc)
+        } else {
+            // NOTE(onbjerg): For some reason the last few bytes of the bytecode do not have
+            // a source map associated, so at that point we just stop searching
+            break
+        };
+        after_range |= is_in_range;
         // We found a push, so we do some PC -> IC translation accounting, but we also check if
         // this push is coupled with the JUMPI we are interested in.
         if opcode_infos[op as usize].is_push() {
-            let element = if let Some(element) = source_map.get(pc - cumulative_push_size) {
-                element
-            } else {
-                // NOTE(onbjerg): For some reason the last few bytes of the bytecode do not have
-                // a source map associated, so at that point we just stop searching
-                break
-            };
-
             // Do push byte accounting
             let push_size = (op - opcode::PUSH1 + 1) as usize;
             pc += push_size;
@@ -133,7 +134,7 @@ pub fn find_anchor_branch(
 
             // Check if we are in the source range we are interested in, and if the next opcode
             // is a JUMPI
-            if is_in_source_range(element, loc) && bytecode.0[pc + 1] == opcode::JUMPI {
+            if !is_in_range && after_range && bytecode.0[pc + 1] == opcode::JUMPI {
                 // We do not support program counters bigger than usize. This is also an
                 // assumption in REVM, so this is just a sanity check.
                 if push_size > 8 {
@@ -157,6 +158,7 @@ pub fn find_anchor_branch(
                     },
                     ItemAnchor { item_id, instruction: usize::from_be_bytes(pc_bytes) },
                 ));
+                after_range = false;
             }
         }
         pc += 1;
