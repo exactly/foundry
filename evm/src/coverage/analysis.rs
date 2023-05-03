@@ -142,13 +142,27 @@ impl<'a> ContractVisitor<'a> {
             }
             // While loops
             NodeType::DoWhileStatement | NodeType::WhileStatement => {
-                self.visit_expression(
-                    node.attribute("condition")
-                        .ok_or_else(|| eyre::eyre!("while statement had no condition"))?,
-                )?;
+                let condition: Node = node
+                    .attribute("condition")
+                    .ok_or_else(|| eyre::eyre!("while statement has no condition"))?;
+
+                let branch_id = self.branch_id;
+
+                self.branch_id += 1;
+
+                self.push_branches(
+                    &ethers::solc::artifacts::ast::LowFidelitySourceLocation {
+                        start: condition.src.start,
+                        length: condition.src.length,
+                        index: node.src.index,
+                    },
+                    branch_id,
+                );
+
+                self.visit_expression(condition)?;
 
                 let body =
-                    node.body.ok_or_else(|| eyre::eyre!("while statement had no body node"))?;
+                    node.body.ok_or_else(|| eyre::eyre!("while statement has no body node"))?;
                 self.visit_block_or_statement(*body)
             }
             // For loops
