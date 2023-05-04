@@ -105,6 +105,11 @@ pub fn find_anchor_branch(
     item_id: usize,
     loc: &SourceLocation,
 ) -> eyre::Result<(ItemAnchor, ItemAnchor)> {
+    let debug = loc.contract_name == "ProtocolTest" &&
+        (loc.line == 292/* || loc.line == 309 || loc.line == 313 */);
+    if debug {
+        println!("{:?}", loc);
+    }
     // NOTE(onbjerg): We use `SpecId::LATEST` here since it does not matter; the only difference
     // is the gas cost.
     let opcode_infos = spec_opcode_gas(SpecId::LATEST);
@@ -124,6 +129,13 @@ pub fn find_anchor_branch(
             break
         };
         after_range |= is_in_range;
+        if debug && after_range {
+            println!(
+                "{pc} {op:#04x} {:?} {after_range} {:?}",
+                opcode::OPCODE_JUMPMAP[op as usize],
+                source_map.get(pc - cumulative_push_size),
+            );
+        }
         // We found a push, so we do some PC -> IC translation accounting, but we also check if
         // this push is coupled with the JUMPI we are interested in.
         if opcode_infos[op as usize].is_push() {
@@ -159,6 +171,21 @@ pub fn find_anchor_branch(
                     ItemAnchor { item_id, instruction: usize::from_be_bytes(pc_bytes) },
                 ));
                 after_range = false;
+                if debug {
+                    println!(
+                        "{pc} {:?}: {:?}",
+                        anchors.clone().unwrap(),
+                        source_map.get(pc - cumulative_push_size - push_size - 1)
+                    );
+                    for i in 0..128 {
+                        println!(
+                            "{pc} + {i} = {}: {:#04x} {:?}",
+                            pc + i,
+                            bytecode.0[pc + i],
+                            opcode::OPCODE_JUMPMAP[bytecode.0[pc + i] as usize]
+                        );
+                    }
+                }
             }
         }
         pc += 1;
