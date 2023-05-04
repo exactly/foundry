@@ -116,7 +116,6 @@ impl<'a> ContractVisitor<'a> {
             NodeType::Continue |
             NodeType::PlaceholderStatement |
             NodeType::Return |
-            NodeType::RevertStatement |
             NodeType::YulAssignment |
             NodeType::YulBreak |
             NodeType::YulContinue |
@@ -137,6 +136,18 @@ impl<'a> ContractVisitor<'a> {
                 self.visit_expression(
                     node.attribute("eventCall")
                         .ok_or_else(|| eyre::eyre!("emit statement has no event call"))?,
+                )?;
+                Ok(())
+            }
+            NodeType::RevertStatement => {
+                self.push_item(CoverageItem {
+                    kind: CoverageItemKind::Statement,
+                    loc: self.source_location_for(&node.src),
+                    hits: 0,
+                });
+                self.visit_expression(
+                    node.attribute("errorCall")
+                        .ok_or_else(|| eyre::eyre!("revert statement has no error call"))?,
                 )?;
                 Ok(())
             }
