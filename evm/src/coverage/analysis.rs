@@ -309,7 +309,6 @@ impl<'a> ContractVisitor<'a> {
         // elementarytypenameexpression
         //  memberaccess
         //  newexpression
-        //  tupleexpression
         //  yulfunctioncall
         match node.node_type {
             NodeType::Assignment => {
@@ -431,6 +430,17 @@ impl<'a> ContractVisitor<'a> {
                     })?,
                 )?;
 
+                Ok(())
+            }
+            NodeType::TupleExpression => {
+                self.push_item(CoverageItem {
+                    kind: CoverageItemKind::Statement,
+                    loc: self.source_location_for(&node.src),
+                    hits: 0,
+                });
+                for component in node.attribute::<Vec<_>>("components").unwrap_or_default() {
+                    self.visit_expression(component)?;
+                }
                 Ok(())
             }
             // Does not count towards coverage
