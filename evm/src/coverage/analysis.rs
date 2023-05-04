@@ -307,7 +307,6 @@ impl<'a> ContractVisitor<'a> {
     fn visit_expression(&mut self, node: Node) -> eyre::Result<()> {
         // TODO
         // elementarytypenameexpression
-        //  memberaccess
         //  newexpression
         //  yulfunctioncall
         match node.node_type {
@@ -441,6 +440,18 @@ impl<'a> ContractVisitor<'a> {
                 for component in node.attribute::<Vec<_>>("components").unwrap_or_default() {
                     self.visit_expression(component)?;
                 }
+                Ok(())
+            }
+            NodeType::MemberAccess => {
+                self.push_item(CoverageItem {
+                    kind: CoverageItemKind::Statement,
+                    loc: self.source_location_for(&node.src),
+                    hits: 0,
+                });
+                self.visit_expression(
+                    node.attribute("expression")
+                        .ok_or_else(|| eyre::eyre!("member access has no expression"))?,
+                )?;
                 Ok(())
             }
             // Does not count towards coverage
