@@ -312,12 +312,24 @@ impl<'a> ContractVisitor<'a> {
         //  tupleexpression
         //  yulfunctioncall
         match node.node_type {
-            NodeType::Assignment | NodeType::UnaryOperation => {
+            NodeType::Assignment => {
                 self.push_item(CoverageItem {
                     kind: CoverageItemKind::Statement,
                     loc: self.source_location_for(&node.src),
                     hits: 0,
                 });
+                Ok(())
+            }
+            NodeType::UnaryOperation => {
+                self.push_item(CoverageItem {
+                    kind: CoverageItemKind::Statement,
+                    loc: self.source_location_for(&node.src),
+                    hits: 0,
+                });
+                self.visit_expression(
+                    node.attribute("subExpression")
+                        .ok_or_else(|| eyre::eyre!("unary operation has no sub expression"))?,
+                )?;
                 Ok(())
             }
             NodeType::BinaryOperation => {
