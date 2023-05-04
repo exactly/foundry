@@ -114,7 +114,6 @@ impl<'a> ContractVisitor<'a> {
             NodeType::Break |
             NodeType::Continue |
             NodeType::PlaceholderStatement |
-            NodeType::Return |
             NodeType::YulAssignment |
             NodeType::YulBreak |
             NodeType::YulContinue |
@@ -148,6 +147,17 @@ impl<'a> ContractVisitor<'a> {
                     node.attribute("errorCall")
                         .ok_or_else(|| eyre::eyre!("revert statement has no error call"))?,
                 )?;
+                Ok(())
+            }
+            NodeType::Return => {
+                self.push_item(CoverageItem {
+                    kind: CoverageItemKind::Statement,
+                    loc: self.source_location_for(&node.src),
+                    hits: 0,
+                });
+                if let Some(expr) = node.attribute("expression") {
+                    self.visit_expression(expr)?;
+                }
                 Ok(())
             }
             // Variable declaration
