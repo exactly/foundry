@@ -410,6 +410,19 @@ impl<'a> ContractVisitor<'a> {
 
                 Ok(())
             }
+            NodeType::ModifierInvocation => {
+                self.push_item(CoverageItem {
+                    kind: CoverageItemKind::Statement,
+                    loc: self.source_location_for(&node.src),
+                    hits: 0,
+                });
+
+                for argument in node.attribute::<Vec<_>>("arguments").unwrap_or_default() {
+                    self.visit_expression(argument)?;
+                }
+
+                Ok(())
+            }
             NodeType::Conditional => {
                 self.push_item(CoverageItem {
                     kind: CoverageItemKind::Statement,
