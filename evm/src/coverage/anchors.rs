@@ -105,6 +105,11 @@ pub fn find_anchor_branch(
     item_id: usize,
     loc: &SourceLocation,
 ) -> eyre::Result<(ItemAnchor, ItemAnchor)> {
+    let debug = loc.contract_name == "ProtocolTest" &&
+        (loc.line == 292/* || loc.line == 309 || loc.line == 313 */);
+    if debug {
+        println!("{:?}", loc);
+    }
     // NOTE(onbjerg): We use `SpecId::LATEST` here since it does not matter; the only difference
     // is the gas cost.
     let opcode_infos = spec_opcode_gas(SpecId::LATEST);
@@ -157,6 +162,16 @@ pub fn find_anchor_branch(
                     },
                     ItemAnchor { item_id, instruction: usize::from_be_bytes(pc_bytes) },
                 ));
+                if debug {
+                    println!(
+                        "{pc} {:?}: {:?}",
+                        anchors.clone().unwrap(),
+                        source_map.get(pc - cumulative_push_size)
+                    );
+                    for i in 0..16 {
+                        println!("{pc} + {i} = {}: {:#04x}", pc + i, bytecode.0[pc + i]);
+                    }
+                }
             }
         }
         pc += 1;
