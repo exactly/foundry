@@ -457,9 +457,16 @@ impl<'a> ContractVisitor<'a> {
                 )?;
                 Ok(())
             }
+            NodeType::Identifier => {
+                self.push_item(CoverageItem {
+                    kind: CoverageItemKind::Statement,
+                    loc: self.source_location_for(&node.src),
+                    hits: 0,
+                });
+                Ok(())
+            }
             // Does not count towards coverage
             NodeType::FunctionCallOptions |
-            NodeType::Identifier |
             NodeType::IndexAccess |
             NodeType::IndexRangeAccess |
             NodeType::Literal |
