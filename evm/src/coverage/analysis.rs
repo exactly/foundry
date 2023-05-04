@@ -54,8 +54,14 @@ impl<'a> ContractVisitor<'a> {
 
         // Find all functions and walk their AST
         for node in contract_ast.nodes {
-            if node.node_type == NodeType::FunctionDefinition {
-                self.visit_function_definition(node.clone())?;
+            match node.node_type {
+                NodeType::FunctionDefinition => {
+                    self.visit_function_definition(node)?;
+                }
+                NodeType::ModifierDefinition => {
+                    self.visit_modifier_definition(node)?;
+                }
+                _ => {}
             }
         }
 
@@ -87,6 +93,19 @@ impl<'a> ContractVisitor<'a> {
             }
             _ => Ok(()),
         }
+    }
+
+    fn visit_modifier_definition(&mut self, node: Node) -> eyre::Result<()> {
+        let name: String =
+            node.attribute("name").ok_or_else(|| eyre::eyre!("modifier has no name"))?;
+
+        self.push_item(CoverageItem {
+            kind: CoverageItemKind::Function { name },
+            loc: self.source_location_for(&node.src),
+            hits: 0,
+        });
+        self.visit_block(*node.body.ok_or_else(|| eyre::eyre!("modifier has no body"))?)?;
+        Ok(())
     }
 
     fn visit_block(&mut self, node: Node) -> eyre::Result<()> {
