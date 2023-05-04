@@ -317,6 +317,10 @@ impl<'a> ContractVisitor<'a> {
                     _ => (),
                 }
 
+                for argument in node.attribute::<Vec<_>>("arguments").unwrap_or_default() {
+                    self.visit_expression(argument)?;
+                }
+
                 Ok(())
             }
             NodeType::Conditional => {
