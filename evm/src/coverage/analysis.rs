@@ -203,7 +203,9 @@ impl<'a> ContractVisitor<'a> {
                 if let Some(stmt) = node.attribute("initializationExpression") {
                     self.visit_statement(stmt)?;
                 }
-                if let Some(expr) = node.attribute("condition") {
+                if let Some(expr) = node.attribute::<Node>("condition") {
+                    self.push_branches(&expr.src, self.branch_id);
+                    self.branch_id += 1;
                     self.visit_expression(expr)?;
                 }
                 if let Some(stmt) = node.attribute("loopExpression") {
