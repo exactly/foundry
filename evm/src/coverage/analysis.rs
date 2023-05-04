@@ -114,7 +114,6 @@ impl<'a> ContractVisitor<'a> {
             // Simple statements
             NodeType::Break |
             NodeType::Continue |
-            NodeType::EmitStatement |
             NodeType::PlaceholderStatement |
             NodeType::Return |
             NodeType::RevertStatement |
@@ -127,6 +126,18 @@ impl<'a> ContractVisitor<'a> {
                     loc: self.source_location_for(&node.src),
                     hits: 0,
                 });
+                Ok(())
+            }
+            NodeType::EmitStatement => {
+                self.push_item(CoverageItem {
+                    kind: CoverageItemKind::Statement,
+                    loc: self.source_location_for(&node.src),
+                    hits: 0,
+                });
+                self.visit_expression(
+                    node.attribute("eventCall")
+                        .ok_or_else(|| eyre::eyre!("emit statement had no event call"))?,
+                )?;
                 Ok(())
             }
             // Variable declaration
