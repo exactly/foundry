@@ -318,6 +318,14 @@ impl<'a> ContractVisitor<'a> {
                     loc: self.source_location_for(&node.src),
                     hits: 0,
                 });
+                self.visit_expression(
+                    node.attribute("leftHandSide")
+                        .ok_or_else(|| eyre::eyre!("assignment has no left-hand side"))?,
+                )?;
+                self.visit_expression(
+                    node.attribute("rightHandSide")
+                        .ok_or_else(|| eyre::eyre!("assignment has no right-hand side"))?,
+                )?;
                 Ok(())
             }
             NodeType::UnaryOperation => {
