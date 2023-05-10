@@ -201,9 +201,9 @@ impl Display for ItemAnchor {
 #[derive(Clone, Debug)]
 pub enum CoverageItemKind {
     /// An executable line in the code.
-    Line,
+    Line { inline: bool },
     /// A statement in the code.
-    Statement,
+    Statement { inline: bool, name: Option<String> },
     /// A branch in the code.
     Branch {
         /// The ID that identifies the branch.
@@ -215,11 +215,13 @@ pub enum CoverageItemKind {
         ///
         /// The first path has ID 0, the next ID 1, and so on.
         path_id: usize,
+        inline: bool,
     },
     /// A function in the code.
     Function {
         /// The name of the function.
         name: String,
+        inline: bool,
     },
 }
 
@@ -229,6 +231,7 @@ pub struct CoverageItem {
     pub kind: CoverageItemKind,
     /// The location of the item in the source code.
     pub loc: SourceLocation,
+    pub index: u64,
     /// The number of times this item was hit.
     pub hits: u64,
 }
@@ -236,16 +239,16 @@ pub struct CoverageItem {
 impl Display for CoverageItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
-            CoverageItemKind::Line => {
+            CoverageItemKind::Line { .. } => {
                 write!(f, "Line")?;
             }
-            CoverageItemKind::Statement => {
+            CoverageItemKind::Statement { .. } => {
                 write!(f, "Statement")?;
             }
-            CoverageItemKind::Branch { branch_id, path_id } => {
+            CoverageItemKind::Branch { branch_id, path_id, .. } => {
                 write!(f, "Branch (branch: {branch_id}, path: {path_id})")?;
             }
-            CoverageItemKind::Function { name } => {
+            CoverageItemKind::Function { name, .. } => {
                 write!(f, r#"Function "{name}""#)?;
             }
         }
@@ -317,13 +320,13 @@ impl AddAssign<&Self> for CoverageSummary {
 impl AddAssign<&CoverageItem> for CoverageSummary {
     fn add_assign(&mut self, item: &CoverageItem) {
         match item.kind {
-            CoverageItemKind::Line => {
+            CoverageItemKind::Line { .. } => {
                 self.line_count += 1;
                 if item.hits > 0 {
                     self.line_hits += 1;
                 }
             }
-            CoverageItemKind::Statement => {
+            CoverageItemKind::Statement { .. } => {
                 self.statement_count += 1;
                 if item.hits > 0 {
                     self.statement_hits += 1;
@@ -348,13 +351,13 @@ impl AddAssign<&CoverageItem> for CoverageSummary {
 impl AddAssign<&CoverageItem> for &mut CoverageSummary {
     fn add_assign(&mut self, item: &CoverageItem) {
         match item.kind {
-            CoverageItemKind::Line => {
+            CoverageItemKind::Line { .. } => {
                 self.line_count += 1;
                 if item.hits > 0 {
                     self.line_hits += 1;
                 }
             }
-            CoverageItemKind::Statement => {
+            CoverageItemKind::Statement { .. } => {
                 self.statement_count += 1;
                 if item.hits > 0 {
                     self.statement_hits += 1;

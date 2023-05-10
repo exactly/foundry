@@ -244,6 +244,7 @@ impl CoverageArgs {
                             &ic_pc_maps.get(contract_id)?.1,
                             item_ids,
                             &source_analysis.items,
+                            &source_analysis.modifiers,
                         ),
                     ))
                 })

@@ -93,15 +93,15 @@ impl<'a> CoverageReporter for LcovReporter<'a> {
                 let line = item.loc.line;
                 let hits = item.hits;
                 match item.kind {
-                    CoverageItemKind::Function { name } => {
+                    CoverageItemKind::Function { name, .. } => {
                         let name = format!("{}.{name}", item.loc.contract_name);
                         writeln!(self.destination, "FN:{line},{name}")?;
                         writeln!(self.destination, "FNDA:{hits},{name}")?;
                     }
-                    CoverageItemKind::Line => {
+                    CoverageItemKind::Line { .. } => {
                         writeln!(self.destination, "DA:{line},{hits}")?;
                     }
-                    CoverageItemKind::Branch { branch_id, path_id } => {
+                    CoverageItemKind::Branch { branch_id, path_id, .. } => {
                         writeln!(
                             self.destination,
                             "BRDA:{line},{branch_id},{path_id},{}",
@@ -109,7 +109,7 @@ impl<'a> CoverageReporter for LcovReporter<'a> {
                         )?;
                     }
                     // Statements are not in the LCOV format
-                    CoverageItemKind::Statement => (),
+                    CoverageItemKind::Statement { .. } => (),
                 }
             }
 

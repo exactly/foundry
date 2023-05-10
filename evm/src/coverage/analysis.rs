@@ -2,7 +2,11 @@ use super::{ContractId, CoverageItem, CoverageItemKind, SourceLocation};
 use ethers::solc::artifacts::ast::{self, Ast, Node, NodeType};
 use foundry_common::TestFunctionExt;
 use semver::Version;
-use std::collections::{HashMap, HashSet};
+use serde_json::Value;
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Range,
+};
 
 /// A visitor that walks the AST of a single contract and finds coverage items.
 #[derive(Debug, Clone)]
@@ -20,6 +24,11 @@ pub struct ContractVisitor<'a> {
     /// Stores the last line we put in the items collection to ensure we don't push duplicate lines
     last_line: usize,
 
+    /// Modifier invocation counter
+    modifier_invocation_counter: HashMap<String, u64>,
+
+    modifiers: HashMap<(usize, String), Range<usize>>,
+
     /// Coverage items
     pub items: Vec<CoverageItem>,
 
@@ -36,8 +45,10 @@ impl<'a> ContractVisitor<'a> {
             contract_name,
             branch_id: 0,
             last_line: 0,
+            modifier_invocation_counter: HashMap::new(),
             items: Vec::new(),
             base_contract_node_ids: HashSet::new(),
+            modifiers: HashMap::new(),
         }
     }
 
@@ -79,15 +90,20 @@ impl<'a> ContractVisitor<'a> {
         let kind: String =
             node.attribute("kind").ok_or_else(|| eyre::eyre!("Function has no kind"))?;
         if kind == "constructor" || kind == "receive" {
-            return Ok(())
+            return Ok(());
+        }
+
+        for modifier in node.attribute::<Vec<_>>("modifiers").unwrap_or_default() {
+            self.visit_expression(modifier)?;
         }
 
         match node.body.take() {
             Some(body) => {
                 self.push_item(CoverageItem {
-                    kind: CoverageItemKind::Function { name },
+                    kind: CoverageItemKind::Function { name, inline: false },
                     loc: self.source_location_for(&node.src),
                     hits: 0,
+                    index: 0,
                 });
                 self.visit_block(*body)
             }
@@ -98,13 +114,21 @@ impl<'a> ContractVisitor<'a> {
     fn visit_modifier_definition(&mut self, node: Node) -> eyre::Result<()> {
         let name: String =
             node.attribute("name").ok_or_else(|| eyre::eyre!("modifier has no name"))?;
+        println!(
+            "ModifierDefinition `{name}` location: {:#?}",
+            self.source_location_for(&node.src)
+        );
 
+        let first = self.items.len();
         self.push_item(CoverageItem {
-            kind: CoverageItemKind::Function { name },
+            kind: CoverageItemKind::Function { name: name.clone(), inline: false },
             loc: self.source_location_for(&node.src),
             hits: 0,
+            index: 0,
         });
         self.visit_block(*node.body.ok_or_else(|| eyre::eyre!("modifier has no body"))?)?;
+        let last = self.items.len();
+        self.modifiers.insert((self.source_id, name.clone()), first..last);
         Ok(())
     }
 
@@ -130,25 +154,27 @@ impl<'a> ContractVisitor<'a> {
                     .ok_or_else(|| eyre::eyre!("inline assembly block with no AST attribute"))?,
             ),
             // Simple statements
-            NodeType::Break |
-            NodeType::Continue |
-            NodeType::PlaceholderStatement |
-            NodeType::YulAssignment |
-            NodeType::YulBreak |
-            NodeType::YulContinue |
-            NodeType::YulLeave => {
+            NodeType::Break
+            | NodeType::Continue
+            | NodeType::PlaceholderStatement
+            | NodeType::YulAssignment
+            | NodeType::YulBreak
+            | NodeType::YulContinue
+            | NodeType::YulLeave => {
                 self.push_item(CoverageItem {
-                    kind: CoverageItemKind::Statement,
+                    kind: CoverageItemKind::Statement { inline: false, name: None },
                     loc: self.source_location_for(&node.src),
                     hits: 0,
+                    index: 0,
                 });
                 Ok(())
             }
             NodeType::EmitStatement => {
                 self.push_item(CoverageItem {
-                    kind: CoverageItemKind::Statement,
+                    kind: CoverageItemKind::Statement { inline: false, name: None },
                     loc: self.source_location_for(&node.src),
                     hits: 0,
+                    index: 0,
                 });
                 self.visit_expression(
                     node.attribute("eventCall")
@@ -158,9 +184,10 @@ impl<'a> ContractVisitor<'a> {
             }
             NodeType::RevertStatement => {
                 self.push_item(CoverageItem {
-                    kind: CoverageItemKind::Statement,
+                    kind: CoverageItemKind::Statement { inline: false, name: None },
                     loc: self.source_location_for(&node.src),
                     hits: 0,
+                    index: 0,
                 });
                 self.visit_expression(
                     node.attribute("errorCall")
@@ -170,9 +197,10 @@ impl<'a> ContractVisitor<'a> {
             }
             NodeType::Return => {
                 self.push_item(CoverageItem {
-                    kind: CoverageItemKind::Statement,
+                    kind: CoverageItemKind::Statement { inline: false, name: None },
                     loc: self.source_location_for(&node.src),
                     hits: 0,
+                    index: 0,
                 });
                 if let Some(expr) = node.attribute("expression") {
                     self.visit_expression(expr)?;
@@ -182,9 +210,10 @@ impl<'a> ContractVisitor<'a> {
             // Variable declaration
             NodeType::VariableDeclarationStatement => {
                 self.push_item(CoverageItem {
-                    kind: CoverageItemKind::Statement,
+                    kind: CoverageItemKind::Statement { inline: false, name: None },
                     loc: self.source_location_for(&node.src),
                     hits: 0,
+                    index: 0,
                 });
                 if let Some(expr) = node.attribute("initialValue") {
                     self.visit_expression(expr)?;
@@ -301,9 +330,10 @@ impl<'a> ContractVisitor<'a> {
                 self.branch_id += 1;
 
                 self.push_item(CoverageItem {
-                    kind: CoverageItemKind::Branch { branch_id, path_id: 0 },
+                    kind: CoverageItemKind::Branch { branch_id, path_id: 0, inline: false },
                     loc: self.source_location_for(&node.src),
                     hits: 0,
+                    index: 0,
                 });
                 self.visit_block(*body)?;
 
@@ -333,9 +363,10 @@ impl<'a> ContractVisitor<'a> {
         match node.node_type {
             NodeType::Assignment => {
                 self.push_item(CoverageItem {
-                    kind: CoverageItemKind::Statement,
+                    kind: CoverageItemKind::Statement { inline: false, name: None },
                     loc: self.source_location_for(&node.src),
                     hits: 0,
+                    index: 0,
                 });
                 self.visit_expression(
                     node.attribute("leftHandSide")
@@ -349,9 +380,10 @@ impl<'a> ContractVisitor<'a> {
             }
             NodeType::UnaryOperation => {
                 self.push_item(CoverageItem {
-                    kind: CoverageItemKind::Statement,
+                    kind: CoverageItemKind::Statement { inline: false, name: None },
                     loc: self.source_location_for(&node.src),
                     hits: 0,
+                    index: 0,
                 });
                 self.visit_expression(
                     node.attribute("subExpression")
@@ -361,9 +393,10 @@ impl<'a> ContractVisitor<'a> {
             }
             NodeType::BinaryOperation => {
                 self.push_item(CoverageItem {
-                    kind: CoverageItemKind::Statement,
+                    kind: CoverageItemKind::Statement { inline: false, name: None },
                     loc: self.source_location_for(&node.src),
                     hits: 0,
+                    index: 0,
                 });
                 self.visit_expression(
                     node.attribute("leftExpression")
@@ -377,18 +410,29 @@ impl<'a> ContractVisitor<'a> {
             }
             NodeType::FunctionCall => {
                 self.push_item(CoverageItem {
-                    kind: CoverageItemKind::Statement,
+                    kind: CoverageItemKind::Statement { inline: false, name: None },
                     loc: self.source_location_for(&node.src),
                     hits: 0,
+                    index: 0,
                 });
-
+                let arguments: Vec<Node> = node.attribute("arguments").unwrap_or_default();
                 let expr: Option<Node> = node.attribute("expression");
                 match expr.as_ref().map(|expr| &expr.node_type) {
                     // Might be a require/assert call
                     Some(NodeType::Identifier) => {
                         let name: Option<String> = expr.and_then(|expr| expr.attribute("name"));
                         if let Some("assert" | "require") = name.as_deref() {
-                            self.push_branches(&node.src, self.branch_id);
+                            let condition = arguments.get(0).unwrap_or_else(|| {
+                                panic!("{} call has no condition", name.unwrap())
+                            });
+                            self.push_branches(
+                                &ethers::solc::artifacts::ast::LowFidelitySourceLocation {
+                                    start: condition.src.start,
+                                    length: condition.src.length,
+                                    index: node.src.index,
+                                },
+                                self.branch_id,
+                            );
                             self.branch_id += 1;
                         }
                     }
@@ -404,17 +448,33 @@ impl<'a> ContractVisitor<'a> {
                     _ => (),
                 }
 
-                for argument in node.attribute::<Vec<_>>("arguments").unwrap_or_default() {
+                for argument in arguments {
                     self.visit_expression(argument)?;
                 }
 
                 Ok(())
             }
             NodeType::ModifierInvocation => {
+                let name = node
+                    .attribute::<Value>("modifierName")
+                    .and_then(|modifier_name| match modifier_name {
+                        Value::Object(object) => {
+                            object.get("name").and_then(Value::as_str).map(str::to_owned)
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| panic!("modifier invocation has no name"));
+                println!(
+                    "ModifierInvocation `{name}` location: {:#?}",
+                    self.source_location_for(&node.src)
+                );
+                *self.modifier_invocation_counter.entry(name.clone()).or_insert(0) += 1;
+                println!("ModifierInvocation: {name}: {}", self.modifier_invocation_counter[&name]);
                 self.push_item(CoverageItem {
-                    kind: CoverageItemKind::Statement,
+                    kind: CoverageItemKind::Statement { inline: true, name: Some(name.clone()) },
                     loc: self.source_location_for(&node.src),
                     hits: 0,
+                    index: self.modifier_invocation_counter[&name] - 1,
                 });
 
                 for argument in node.attribute::<Vec<_>>("arguments").unwrap_or_default() {
@@ -425,9 +485,10 @@ impl<'a> ContractVisitor<'a> {
             }
             NodeType::Conditional => {
                 self.push_item(CoverageItem {
-                    kind: CoverageItemKind::Statement,
+                    kind: CoverageItemKind::Statement { inline: false, name: None },
                     loc: self.source_location_for(&node.src),
                     hits: 0,
+                    index: 0,
                 });
 
                 let condition: Node = node
@@ -467,9 +528,10 @@ impl<'a> ContractVisitor<'a> {
             }
             NodeType::TupleExpression => {
                 self.push_item(CoverageItem {
-                    kind: CoverageItemKind::Statement,
+                    kind: CoverageItemKind::Statement { inline: false, name: None },
                     loc: self.source_location_for(&node.src),
                     hits: 0,
+                    index: 0,
                 });
                 for component in node.attribute::<Vec<_>>("components").unwrap_or_default() {
                     self.visit_expression(component)?;
@@ -478,9 +540,10 @@ impl<'a> ContractVisitor<'a> {
             }
             NodeType::MemberAccess => {
                 self.push_item(CoverageItem {
-                    kind: CoverageItemKind::Statement,
+                    kind: CoverageItemKind::Statement { inline: false, name: None },
                     loc: self.source_location_for(&node.src),
                     hits: 0,
+                    index: 0,
                 });
                 self.visit_expression(
                     node.attribute("expression")
@@ -490,19 +553,20 @@ impl<'a> ContractVisitor<'a> {
             }
             NodeType::Identifier => {
                 self.push_item(CoverageItem {
-                    kind: CoverageItemKind::Statement,
+                    kind: CoverageItemKind::Statement { inline: false, name: None },
                     loc: self.source_location_for(&node.src),
                     hits: 0,
+                    index: 0,
                 });
                 Ok(())
             }
             // Does not count towards coverage
-            NodeType::FunctionCallOptions |
-            NodeType::IndexAccess |
-            NodeType::IndexRangeAccess |
-            NodeType::Literal |
-            NodeType::YulLiteralValue |
-            NodeType::YulIdentifier => Ok(()),
+            NodeType::FunctionCallOptions
+            | NodeType::IndexAccess
+            | NodeType::IndexRangeAccess
+            | NodeType::Literal
+            | NodeType::YulLiteralValue
+            | NodeType::YulIdentifier => Ok(()),
             _ => {
                 warn!("unexpected node type, expected an expression: {:?}", node.node_type);
                 Ok(())
@@ -513,20 +577,20 @@ impl<'a> ContractVisitor<'a> {
     fn visit_block_or_statement(&mut self, node: Node) -> eyre::Result<()> {
         match node.node_type {
             NodeType::Block => self.visit_block(node),
-            NodeType::Break |
-            NodeType::Continue |
-            NodeType::DoWhileStatement |
-            NodeType::EmitStatement |
-            NodeType::ExpressionStatement |
-            NodeType::ForStatement |
-            NodeType::IfStatement |
-            NodeType::InlineAssembly |
-            NodeType::PlaceholderStatement |
-            NodeType::Return |
-            NodeType::RevertStatement |
-            NodeType::TryStatement |
-            NodeType::VariableDeclarationStatement |
-            NodeType::WhileStatement => self.visit_statement(node),
+            NodeType::Break
+            | NodeType::Continue
+            | NodeType::DoWhileStatement
+            | NodeType::EmitStatement
+            | NodeType::ExpressionStatement
+            | NodeType::ForStatement
+            | NodeType::IfStatement
+            | NodeType::InlineAssembly
+            | NodeType::PlaceholderStatement
+            | NodeType::Return
+            | NodeType::RevertStatement
+            | NodeType::TryStatement
+            | NodeType::VariableDeclarationStatement
+            | NodeType::WhileStatement => self.visit_statement(node),
             _ => {
                 warn!("unexpected node type, expected block or statement: {:?}", node.node_type);
                 Ok(())
@@ -539,13 +603,14 @@ impl<'a> ContractVisitor<'a> {
         let source_location = &item.loc;
 
         // Push a line item if we haven't already
-        if matches!(item.kind, CoverageItemKind::Statement | CoverageItemKind::Branch { .. }) &&
-            self.last_line < source_location.line
+        if matches!(item.kind, CoverageItemKind::Statement { .. } | CoverageItemKind::Branch { .. })
+            && self.last_line < source_location.line
         {
             self.items.push(CoverageItem {
-                kind: CoverageItemKind::Line,
+                kind: CoverageItemKind::Line { inline: false },
                 loc: source_location.clone(),
                 hits: 0,
+                index: 0,
             });
             self.last_line = source_location.line;
         }
@@ -565,14 +630,16 @@ impl<'a> ContractVisitor<'a> {
 
     fn push_branches(&mut self, loc: &ast::LowFidelitySourceLocation, branch_id: usize) {
         self.push_item(CoverageItem {
-            kind: CoverageItemKind::Branch { branch_id, path_id: 0 },
+            kind: CoverageItemKind::Branch { branch_id, path_id: 0, inline: false },
             loc: self.source_location_for(loc),
             hits: 0,
+            index: 0,
         });
         self.push_item(CoverageItem {
-            kind: CoverageItemKind::Branch { branch_id, path_id: 1 },
+            kind: CoverageItemKind::Branch { branch_id, path_id: 1, inline: false },
             loc: self.source_location_for(loc),
             hits: 0,
+            index: 0,
         });
     }
 }
@@ -584,6 +651,8 @@ pub struct SourceAnalysis {
     /// A mapping of contract IDs to item IDs relevant to the contract (including items in base
     /// contracts).
     pub contract_items: HashMap<ContractId, Vec<usize>>,
+
+    pub modifiers: HashMap<(usize, String), Range<usize>>,
 }
 
 /// Analyzes a set of sources to find coverage items.
@@ -601,6 +670,8 @@ pub struct SourceAnalyzer {
     contract_items: HashMap<ContractId, Vec<usize>>,
     /// A map of contracts to their base contracts
     contract_bases: HashMap<ContractId, Vec<ContractId>>,
+
+    modifiers: HashMap<(usize, String), Range<usize>>,
 }
 
 impl SourceAnalyzer {
@@ -619,7 +690,7 @@ impl SourceAnalyzer {
         for (source_id, ast) in asts.into_iter() {
             for child in ast.nodes {
                 if !matches!(child.node_type, NodeType::ContractDefinition) {
-                    continue
+                    continue;
                 }
 
                 let node_id =
@@ -678,34 +749,39 @@ impl SourceAnalyzer {
             }
         }
 
-        Ok(SourceAnalysis { items: self.items.clone(), contract_items: flattened })
+        Ok(SourceAnalysis {
+            items: self.items.clone(),
+            contract_items: flattened,
+            modifiers: self.modifiers.clone(),
+        })
     }
 
     fn analyze_contracts(&mut self) -> eyre::Result<()> {
         for contract_id in self.contracts.keys() {
             // Find this contract's coverage items if we haven't already
             if self.contract_items.get(contract_id).is_none() {
-                let ContractVisitor { items, base_contract_node_ids, .. } = ContractVisitor::new(
-                    contract_id.source_id,
-                    self.sources.get(&contract_id.source_id).unwrap_or_else(|| {
-                        panic!(
-                            "We should have the source code for source ID {}",
-                            contract_id.source_id
-                        )
-                    }),
-                    contract_id.contract_name.clone(),
-                )
-                .visit(
-                    self.contracts
-                        .get(contract_id)
-                        .unwrap_or_else(|| {
-                            panic!("We should have the AST of contract: {contract_id:?}")
-                        })
-                        .clone(),
-                )?;
+                let ContractVisitor { items, base_contract_node_ids, mut modifiers, .. } =
+                    ContractVisitor::new(
+                        contract_id.source_id,
+                        self.sources.get(&contract_id.source_id).unwrap_or_else(|| {
+                            panic!(
+                                "We should have the source code for source ID {}",
+                                contract_id.source_id
+                            )
+                        }),
+                        contract_id.contract_name.clone(),
+                    )
+                    .visit(
+                        self.contracts
+                            .get(contract_id)
+                            .unwrap_or_else(|| {
+                                panic!("We should have the AST of contract: {contract_id:?}")
+                            })
+                            .clone(),
+                    )?;
 
                 let is_test = items.iter().any(|item| {
-                    if let CoverageItemKind::Function { name } = &item.kind {
+                    if let CoverageItemKind::Function { name, inline: false } = &item.kind {
                         name.is_test()
                     } else {
                         false
@@ -733,7 +809,12 @@ impl SourceAnalyzer {
                 } else {
                     let item_ids: Vec<usize> =
                         (self.items.len()..self.items.len() + items.len()).collect();
+                    modifiers.iter_mut().for_each(|(_, value)| {
+                        value.start += self.items.len();
+                        value.end += self.items.len();
+                    });
                     self.items.extend(items);
+                    self.modifiers.extend(modifiers);
                     self.contract_items.insert(contract_id.clone(), item_ids.clone());
                 }
             }
